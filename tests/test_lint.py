@@ -146,3 +146,20 @@ def test_preserved_prose_rules():
     draft["SKILL.md"] = draft["SKILL.md"].replace(rule, "")
     draft["reference/load-balance.md"] += "\n" + rule + "\n"
     assert check_preserved(draft, base) == []
+
+
+def test_user_standard_skill_full_set_clean():
+    """补齐 7 个场景文件（按 load-balance.md 的格式占位）后，用户的标准 skill 应零问题。"""
+    files = isis_standard()
+    lb = files["reference/load-balance.md"]
+    for slug, title in {
+        "neighbor-down": "场景A：IS-IS 邻居无法建立",
+        "neighbor-flap": "场景B：IS-IS 邻居中断/震荡/down",
+        "route-not-learned": "场景C：IS-IS 路由学习不到",
+        "loop": "场景D：IS-IS 多进程互引/LDP 联动导致路由成环",
+        "multicast-topology": "场景E：IS-IS 组播拓扑中路由信息不正确",
+        "route-flap": "场景G：IS-IS 路由震荡",
+    }.items():
+        files[f"reference/{slug}.md"] = lb.replace("name: load-balance", f"name: {slug}").replace(
+            "场景F：IS-IS 路由无法形成负载分担", title)
+    assert lint_draft(files) == []

@@ -19,6 +19,7 @@ from .fileblocks import UnsafePathError, parse_output, safe_relpath, strip_block
 from .lint import lint_draft
 from .parser import ParseError, parse_upload
 from .sessions import SessionStore, add_draft, current_draft
+from .versioning import apply_bumps, plan_bumps
 from .skills import MAIN_FILE, SkillStore, parse_frontmatter, valid_name, zip_files
 
 app = FastAPI(title="Skill 维护 Agent")
@@ -81,6 +82,17 @@ def _example_skill(s: dict) -> tuple[str, dict[str, str]] | None:
     return None
 
 
+def _library_files(s: dict, files: dict[str, str]) -> dict[str, str]:
+    """写回目标在库中的当前内容（用于计算 version 递增）。"""
+    name = _draft_name(s, files)
+    if not name or not skills.exists(name):
+        return {}
+    try:
+        return skills.read_files(name)
+    except (ValueError, FileNotFoundError):
+        return {}
+
+
 def _draft_name(s: dict, files: dict[str, str]) -> str | None:
     if s["mode"] == "modify":
         return s["target"]
@@ -101,6 +113,7 @@ def _view(s: dict) -> dict:
             "name": _draft_name(s, files),
             "lint": lint_draft(files, s["base_files"]) if files else [],
             "changed": _changed_files(s["base_files"], files),
+            "version_bumps": plan_bumps(files, _library_files(s, files)) if files else [],
         },
         "base_files": list(s["base_files"]),
     }
@@ -474,13 +487,18 @@ async def writeback(sid: str, req: WritebackReq):
         # create 覆盖已有 skill 时整体替换（旧文件已备份）；modify 时删除草稿里去掉的文件
         old = skills.read_files(name) if s["mode"] == "create" and skills.exists(name) else s["base_files"]
         deletes = [p for p in old if p not in files]
+        # version 以库中当前版本为基准自动递增，并同步成一个新的草稿版本
+        bumps = plan_bumps(files, _library_files(s, files))
+        if bumps:
+            files = apply_bumps(files, bumps)
+            add_draft(s, files, "writeback", "写回：" + "，".join(f"{b['path']} {b['new']}" for b in bumps))
         backup = skills.write(name, files, deletes)
-        s["writebacks"].append({"ts": time.time(), "name": name, "backup": backup, "version": s["drafts"][-1]["version"]})
+        s["writebacks"].append({"ts": time.time(), "name": name, "backup": backup, "version": s["drafts"][-1]["version"], "bumps": bumps})
         # 写回后，后续修改以写回的版本为基准
         s["mode"], s["target"] = "modify", name
         s["base_files"] = skills.read_files(name)
         sessions.save(s)
-        return {"session": _view(s), "name": name, "backup": backup}
+        return {"session": _view(s), "name": name, "backup": backup, "bumps": bumps}
 
 
 # ---------------------------------------------------------------- 前端

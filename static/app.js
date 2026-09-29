@@ -448,7 +448,7 @@ function renderPanel() {
   const sel = $("#versionSelect");
   sel.hidden = !s.versions.length;
   sel.replaceChildren(...s.versions.slice().reverse().map((v) => el("option", { value: v.version, selected: v.version === (state.viewVersion ?? d.version) },
-    `v${v.version} · ${{ base: "原始", model: "模型", manual: "手动", revert: "回退" }[v.source] || v.source}${v.note ? " · " + v.note.slice(0, 24) : ""}`)));
+    `v${v.version} · ${{ base: "原始", model: "模型", manual: "手动", revert: "回退", writeback: "写回" }[v.source] || v.source}${v.note ? " · " + v.note.slice(0, 24) : ""}`)));
 
   const files = panelFiles();
   const names = Object.keys(files).sort((a, b) => (a === "SKILL.md" ? -1 : b === "SKILL.md" ? 1 : a.localeCompare(b)));
@@ -579,6 +579,7 @@ function writeback(overwrite) {
     s.mode === "modify" ? "原目录会先整体备份到 data/backups/。" : "新增 skill。",
     "",
     changes.length ? "变更文件：\n" + changes.join("\n") : "与库中版本相比没有变更。",
+    d.version_bumps.length ? "\nversion 自动递增：\n" + d.version_bumps.map((b) => `  ${b.path}  ${b.old} → ${b.new}`).join("\n") : "",
     errs ? `\n⚠ 格式检查仍有 ${errs} 个错误，确定要写回吗？` : "",
   ].join("\n");
   const doIt = async (ow) => {
@@ -587,7 +588,7 @@ function writeback(overwrite) {
       setSession(r.session);
       loadSkills();
       loadSessions();
-      toast(`已写回 ${r.name}` + (r.backup ? `\n备份：${r.backup}` : ""));
+      toast(`已写回 ${r.name}` + (r.bumps?.length ? `（${r.bumps.map((b) => `${b.path} → ${b.new}`).join("，")}）` : "") + (r.backup ? `\n备份：${r.backup}` : ""));
     } catch (e) {
       if (e.status === 409) showDialog("skill 已存在", e.message, [{ label: "覆盖（先备份）", primary: true, onClick: () => doIt(true) }]);
       else toast(e.message, true);

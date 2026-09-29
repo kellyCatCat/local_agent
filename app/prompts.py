@@ -121,7 +121,8 @@ def first_turn(mode: str, target: str | None, base_files: dict[str, str], upload
         if example:
             task += (
                 f"\n\n# 参考样例：本地标准 skill「{example[0]}」（节选）\n\n"
-                "只参考它的格式、写法和与具体故障无关的通用执行规则，不要照抄它的故障内容、命令和根因。\n\n"
+                "只参考它的格式和写法；不要照抄它的故障内容、命令、根因，也不要照抄它的执行规则段落"
+                "（设备锚定、修复前强制检查点、修复下发规则等每个 skill 各写各的，只写源文档或用户要求中给出的）。\n\n"
                 f"{render_files(example[1])}"
             )
     return f"{task}\n\n# 源文档\n\n{sources_block(uploads)}\n\n# 用户要求\n\n{request.strip() or '请按模板规范生成。'}"

@@ -168,3 +168,31 @@ def test_bad_session_id(env):
     assert client.get("/api/sessions/../../etc").status_code == 404
     assert client.get("/api/sessions/" + "a" * 32).status_code == 404
     assert client.get("/api/skills/..%2F..%2Fetc").status_code == 404
+
+
+def test_writeback_bumps_version(env):
+    client, skills_dir, calls, replies = env
+    d = skills_dir / "isis-troubleshooting"
+    (d / "reference").mkdir(parents=True)
+    (d / "SKILL.md").write_text(fixture("isis/SKILL.md"), "utf-8")
+    (d / "reference" / "load-balance.md").write_text(fixture("isis/reference/load-balance.md"), "utf-8")
+
+    sid = client.post("/api/sessions").json()["id"]
+    client.post(f"/api/sessions/{sid}/uploads", files=[("files", ("a.md", b"x", "text/markdown"))])
+    client.post(f"/api/sessions/{sid}/target", json={"mode": "modify", "target": "isis-troubleshooting"})
+    ref = fixture("isis/reference/load-balance.md").replace("本子图未给出判定观测 |", "新现象 |")
+    replies.append(blocks({"reference/load-balance.md": ref}))
+    draft = sse(client.post(f"/api/sessions/{sid}/chat", json={"message": ""}))[-1]["session"]["draft"]
+    assert {b["path"]: b["new"] for b in draft["version_bumps"]} == {"SKILL.md": "1.0.1", "reference/load-balance.md": "1.0.1"}
+
+    r = client.post(f"/api/sessions/{sid}/writeback", json={}).json()
+    assert [b["new"] for b in r["bumps"]] == ["1.0.1", "1.0.1"]
+    assert "version: 1.0.1" in (d / "SKILL.md").read_text("utf-8")
+    assert "version: 1.0.1" in (d / "reference" / "load-balance.md").read_text("utf-8")
+    view = r["session"]
+    assert view["versions"][-1]["source"] == "writeback"
+    assert view["draft"]["changed"] == {} and view["draft"]["version_bumps"] == []
+
+    # 没有新改动再次写回：不递增
+    r = client.post(f"/api/sessions/{sid}/writeback", json={}).json()
+    assert r["bumps"] == [] and "version: 1.0.1" in (d / "SKILL.md").read_text("utf-8")

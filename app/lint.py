@@ -349,6 +349,21 @@ def lint_draft(files: dict[str, str], base: dict[str, str] | None = None) -> lis
     return issues
 
 
+def lint_changes(files: dict[str, str], base: dict[str, str] | None) -> tuple[list[dict], list[dict]]:
+    """只看修改内容：返回 (本次修改引入的问题, 原版中已存在的问题)。
+
+    用同一套规则分别检查原版和草稿，原版里已有的问题（同一文件、同一描述）不算本次修改引入的。
+    没有原版（新建 skill）时，全部问题都算本次引入。
+    """
+    issues = Linter(files).run()
+    if not base:
+        return issues, []
+    old = {(i["file"], i["message"]) for i in Linter(base).run()}
+    new = [i for i in issues if (i["file"], i["message"]) not in old]
+    existing = [i for i in issues if (i["file"], i["message"]) in old]
+    return new + check_preserved(files, base), existing
+
+
 MIN_PROSE_CHARS = 30
 
 

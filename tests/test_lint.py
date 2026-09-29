@@ -1,4 +1,4 @@
-from app.lint import check_preserved, lint_draft
+from app.lint import check_preserved, lint_changes, lint_draft
 from tests.conftest import fixture, multi_files
 
 
@@ -163,3 +163,32 @@ def test_user_standard_skill_full_set_clean():
         files[f"reference/{slug}.md"] = lb.replace("name: load-balance", f"name: {slug}").replace(
             "场景F：IS-IS 路由无法形成负载分担", title)
     assert lint_draft(files) == []
+
+
+def test_lint_changes_only_reports_new_issues():
+    base = isis_standard()  # 原版本身有 6 个「参考文件不存在」
+    new, existing = lint_changes(dict(base), base)
+    assert new == [] and len(existing) == 6
+
+    draft = dict(base)
+    draft["reference/load-balance.md"] = draft["reference/load-balance.md"].replace(
+        "   - 不同厂商默认 cost-type 不一致", "   - cost-type 不一致")
+    new, existing = lint_changes(draft, base)
+    assert [i["message"] for i in new if i["level"] == "error"] == [
+        "步骤1 的根因「cost-type 不一致」未出现在根因对照表中（需逐字一致）"]
+    assert len(existing) == 6
+
+
+def test_lint_changes_cross_file_consequence_counts_as_new():
+    """删掉参考文件后，SKILL.md 本身没改，但由此产生的问题也要报出来。"""
+    base = multi_files()
+    draft = dict(base)
+    del draft["reference/neighbor-flap.md"]
+    new, _ = lint_changes(draft, base)
+    assert any(i["file"] == "SKILL.md" and "neighbor-flap.md」不存在" in i["message"] for i in new)
+
+
+def test_lint_changes_without_base_reports_all():
+    files = {"SKILL.md": fixture("isis/SKILL.md")}
+    new, existing = lint_changes(files, {})
+    assert existing == [] and new == lint_draft(files)

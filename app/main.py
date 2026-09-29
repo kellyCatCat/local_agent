@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from . import llm, prompts
 from .config import ROOT, settings
 from .fileblocks import UnsafePathError, parse_output, safe_relpath, strip_blocks
-from .lint import lint_draft
+from .lint import lint_changes
 from .parser import ParseError, parse_upload
 from .sessions import SessionStore, add_draft, current_draft
 from .versioning import apply_bumps, plan_bumps
@@ -102,6 +102,7 @@ def _draft_name(s: dict, files: dict[str, str]) -> str | None:
 def _view(s: dict) -> dict:
     """返回给前端的会话视图。"""
     files = current_draft(s)
+    lint_new, lint_existing = lint_changes(files, s["base_files"]) if files else ([], [])
     return {
         **{k: s.get(k) for k in ("id", "title", "created_at", "updated_at", "recommendation", "mode", "target", "name", "writebacks")},
         "uploads": [{k: u[k] for k in ("id", "name", "size", "sent")} | {"chars": len(u["text"])} for u in s["uploads"]],
@@ -111,7 +112,8 @@ def _view(s: dict) -> dict:
             "version": s["drafts"][-1]["version"] if s["drafts"] else None,
             "files": files,
             "name": _draft_name(s, files),
-            "lint": lint_draft(files, s["base_files"]) if files else [],
+            "lint": lint_new,                 # 本次修改引入的问题（新建 skill 时为全部问题）
+            "lint_existing": lint_existing,   # 原版中已存在、不在本次修改范围的问题
             "changed": _changed_files(s["base_files"], files),
             "version_bumps": plan_bumps(files, _library_files(s, files)) if files else [],
         },

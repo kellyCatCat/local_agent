@@ -157,6 +157,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .lint ul { margin: 0; padding-left: 18px; }
 .lint li.error { color: var(--danger); }
 .lint li.warning { color: var(--warn); }
+.lint ul.existing li { color: var(--muted); }
+.lint .existing-toggle { margin-top: 4px; }
 .panel-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 10px 12px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 
 dialog { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); padding: 0; width: min(900px, 92vw); }

@@ -10,6 +10,7 @@ const state = {
   viewVersion: null,   // null = 当前版本；数字 = 查看历史版本
   versionFiles: null,
   edits: {},           // 手动编辑未保存的内容 {path: text}
+  showExisting: false, // 是否展开原版中已存在的格式问题
   streaming: null,     // {controller, text}
 };
 
@@ -476,7 +477,7 @@ function renderPanel() {
     loadDiff();
   }
 
-  renderLint(viewingOld ? [] : d.lint, hasDraft && !viewingOld);
+  renderLint(viewingOld ? [] : d.lint, viewingOld ? [] : d.lint_existing, hasDraft && !viewingOld);
 
   const dirty = Object.keys(state.edits).length > 0;
   $("#saveEdit").hidden = !dirty;
@@ -495,24 +496,41 @@ function renderPanel() {
   wbBtn.title = dirty ? "请先保存手动修改" : "";
 }
 
-function renderLint(issues, show) {
+function renderLint(issues, existing, show) {
   const box = $("#lint");
   if (!show) { box.replaceChildren(); return; }
+  const s = state.session;
+  const scoped = !!s.base_files.length;  // 有原版：只看修改内容
+  const unchanged = scoped && !Object.keys(s.draft.changed).length;
+  const nodes = [];
   if (!issues.length) {
-    box.replaceChildren(el("div", { class: "ok" }, "✓ 格式检查通过"));
-    return;
+    nodes.push(el("div", { class: "ok" }, unchanged ? "尚未修改，没有需要检查的改动"
+      : scoped ? "✓ 本次修改未引入格式问题" : "✓ 格式检查通过"));
+  } else {
+    const errs = issues.filter((i) => i.level === "error").length;
+    nodes.push(
+      el("div", { class: "head" },
+        el("span", {}, `${scoped ? "本次修改引入" : "格式检查"}：${errs} 个错误，${issues.length - errs} 个提醒`),
+        el("button", { class: "link", disabled: !!state.streaming, onclick: fixByModel }, "让模型按检查结果修正")),
+      el("ul", {}, ...issues.map((i) => el("li", { class: i.level }, `[${i.file}] ${i.message}`))));
   }
-  const errs = issues.filter((i) => i.level === "error").length;
-  box.replaceChildren(
-    el("div", { class: "head" },
-      el("span", {}, `格式检查：${errs} 个错误，${issues.length - errs} 个提醒`),
-      el("button", { class: "link", disabled: !!state.streaming, onclick: fixByModel }, "让模型按检查结果修正")),
-    el("ul", {}, ...issues.map((i) => el("li", { class: i.level }, `[${i.file}] ${i.message}`))));
+  if (existing.length) {
+    nodes.push(el("div", { class: "muted small existing-toggle" },
+      `另有 ${existing.length} 个原版中已存在的问题，不在本次修改范围 `,
+      el("button", { class: "link", onclick: () => { state.showExisting = !state.showExisting; renderLint(issues, existing, show); } },
+        state.showExisting ? "收起" : "查看")));
+    if (state.showExisting) {
+      nodes.push(el("ul", { class: "existing" }, ...existing.map((i) => el("li", {}, `[${i.file}] ${i.message}`))));
+    }
+  }
+  box.replaceChildren(...nodes);
 }
 
 function fixByModel() {
   const issues = state.session.draft.lint;
-  const text = "请按模板规范修正以下格式检查问题（提醒类如确认无误可保持并说明理由）：\n" +
+  const scoped = !!state.session.base_files.length;
+  const text = "请按模板规范修正以下格式检查问题（提醒类如确认无误可保持并说明理由）" +
+    (scoped ? "。这些都是本次修改引入的问题；原版中已存在的问题不在本次范围，不要顺带改动未修改的内容" : "") + "：\n" +
     issues.map((i, n) => `${n + 1}. [${i.level === "error" ? "错误" : "提醒"}][${i.file}] ${i.message}`).join("\n");
   send(text);
 }

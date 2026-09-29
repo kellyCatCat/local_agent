@@ -47,6 +47,40 @@ def _template() -> str:
         raise HTTPException(500, f"找不到 skill 模板：{settings.template_path}")
 
 
+def _conventions() -> str:
+    try:
+        return settings.conventions_path.read_text("utf-8")
+    except OSError:
+        return ""
+
+
+MAX_EXAMPLE_CHARS = 30000
+
+
+def _example_skill(s: dict) -> tuple[str, dict[str, str]] | None:
+    """新建 skill 时给模型的格式样例：优先推荐里的相关 skill，其次库中的多场景 skill。
+
+    只取 SKILL.md 和一个 reference 文件，控制提示长度。
+    """
+    lib = skills.list()
+    names = [x["name"] for x in lib]
+    rec = s.get("recommendation") or {}
+    multi = [x["name"] for x in lib if any(f.startswith("reference/") for f in x["files"])]
+    for name in (rec.get("candidates") or []) + multi + names:
+        if name not in names:
+            continue
+        files = skills.read_files(name)
+        if MAIN_FILE not in files:
+            continue
+        picked = {MAIN_FILE: files[MAIN_FILE]}
+        refs = sorted(p for p in files if p.startswith("reference/"))
+        if refs:
+            picked[refs[0]] = files[refs[0]]
+        if sum(map(len, picked.values())) <= MAX_EXAMPLE_CHARS:
+            return name, picked
+    return None
+
+
 def _draft_name(s: dict, files: dict[str, str]) -> str | None:
     if s["mode"] == "modify":
         return s["target"]
@@ -65,7 +99,7 @@ def _view(s: dict) -> dict:
             "version": s["drafts"][-1]["version"] if s["drafts"] else None,
             "files": files,
             "name": _draft_name(s, files),
-            "lint": lint_draft(files) if files else [],
+            "lint": lint_draft(files, s["base_files"]) if files else [],
             "changed": _changed_files(s["base_files"], files),
         },
         "base_files": list(s["base_files"]),
@@ -254,7 +288,7 @@ class ChatReq(BaseModel):
 
 
 def _llm_messages(s: dict, user_content: str) -> list[dict]:
-    msgs = [{"role": "system", "content": prompts.system_prompt(_template())}]
+    msgs = [{"role": "system", "content": prompts.system_prompt(_template(), _conventions())}]
     for m in s["messages"]:
         if m.get("error"):
             continue
@@ -285,7 +319,10 @@ async def chat(sid: str, req: ChatReq):
     if first:
         if not s["uploads"]:
             raise HTTPException(400, "请先上传源文档")
-        user_content = prompts.first_turn(s["mode"], s["target"], s["base_files"], s["uploads"], req.message, s.get("name"))
+        user_content = prompts.first_turn(
+            s["mode"], s["target"], s["base_files"], s["uploads"], req.message, s.get("name"),
+            _example_skill(s) if s["mode"] == "create" else None,
+        )
         stored_llm = user_content
     else:
         if not req.message.strip():

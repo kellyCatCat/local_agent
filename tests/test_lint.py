@@ -1,4 +1,4 @@
-from app.lint import lint_draft
+from app.lint import check_preserved, lint_draft
 from tests.conftest import fixture, multi_files
 
 
@@ -81,7 +81,7 @@ def test_multi_ref_name_semantics_and_frontmatter():
 
 def test_multi_steps_not_in_main():
     files = multi_files()
-    files["SKILL.md"] += "\n## 步骤1：不该在这里\n"
+    files["SKILL.md"] = files["SKILL.md"].replace("# references", "## 步骤1：不该在这里\n\n# references")
     assert any("只放参考文件表" in m for m in msgs(lint_draft(files), "error"))
 
 
@@ -90,3 +90,59 @@ def test_backtick_redirect_flagged():
     files["reference/neighbor-down.md"] = files["reference/neighbor-down.md"].replace(
         "转交：「收集信息并转技术支持」", "`转交：「收集信息并转技术支持」`")
     assert any("反引号" in m for m in msgs(lint_draft(files)))
+
+
+def isis_standard():
+    return {
+        "SKILL.md": fixture("isis/SKILL.md"),
+        "reference/load-balance.md": fixture("isis/reference/load-balance.md"),
+    }
+
+
+def test_user_standard_skill_only_missing_refs():
+    """用户提供的标准 skill：除了没附上的 6 个参考文件，不应有任何问题。"""
+    issues = lint_draft(isis_standard())
+    assert issues and all("不存在" in i["message"] for i in issues), issues
+    assert len(issues) == 6
+
+
+def test_jump_target_path_must_match_ref_table():
+    files = isis_standard()
+    files["SKILL.md"] = files["SKILL.md"].replace("（reference/load-balance.md）", "（reference/loop.md）")
+    assert any("指向 reference/loop.md" in m for m in msgs(lint_draft(files), "error"))
+
+
+def test_references_section_must_list_all_refs():
+    files = multi_files()
+    files["SKILL.md"] = files["SKILL.md"].replace("  - neighbor-flap.md\n", "  - stale.md\n")
+    out = msgs(lint_draft(files))
+    assert any("缺少 neighbor-flap.md" in m for m in out)
+    assert any("stale.md 不在参考文件表中" in m for m in out)
+    files["SKILL.md"] = files["SKILL.md"].split("# references")[0]
+    assert any("缺少「# references」" in m for m in msgs(lint_draft(files)))
+
+
+def test_version_format():
+    files = multi_files()
+    files["SKILL.md"] = files["SKILL.md"].replace("version: 1.0.0", "version: v1")
+    assert any("x.y.z" in m for m in msgs(lint_draft(files)))
+
+
+def test_preserved_prose_rules():
+    base = isis_standard()
+    assert check_preserved(base, base) == []
+    draft = dict(base)
+    draft["SKILL.md"] = draft["SKILL.md"].replace("禁止将修复命令下发到本端以外的任何设备。", "")
+    draft["SKILL.md"] = draft["SKILL.md"].replace("  - route-flap.md\n", "")  # references 清单不算说明段落
+    out = check_preserved(draft, base)
+    assert len(out) == 1 and "设备锚定" in out[0]["message"] and out[0]["level"] == "warning"
+    # 步骤、表格等结构性内容的修改不触发
+    draft = dict(base)
+    draft["reference/load-balance.md"] = draft["reference/load-balance.md"].replace("本子图未给出判定观测", "新现象")
+    assert check_preserved(draft, base) == []
+    # 段落移动到其他文件（如拆分为多场景）不算删除
+    draft = dict(base)
+    rule = "即使用户故障报告中包含「目标设备ID」指向其他设备，仍禁止切换到该设备执行诊断或修复；必须在本端完成全部诊断和修复。"
+    draft["SKILL.md"] = draft["SKILL.md"].replace(rule, "")
+    draft["reference/load-balance.md"] += "\n" + rule + "\n"
+    assert check_preserved(draft, base) == []

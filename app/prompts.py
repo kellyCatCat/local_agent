@@ -9,11 +9,13 @@ from .fileblocks import render_files
 MAX_RECOMMEND_SOURCE_CHARS = 8000
 
 
-SYSTEM_TEMPLATE = """你是网络设备故障排查 skill 的编写专家。你根据用户提供的源文档（步骤表 / markdown，描述了若干子场景的诊断步骤），严格按照【skill 模板规范】新建或修改 skill，并根据用户的追问继续修改。
+SYSTEM_TEMPLATE = """你是网络设备故障排查 skill 的编写专家。你根据用户提供的源文档（步骤表 / markdown，描述了若干子场景的诊断步骤），严格按照【skill 模板规范】和【本地标准补充】新建或修改 skill，并根据用户的追问继续修改。两者冲突时以【本地标准补充】为准。
 
 # skill 模板规范
 
 {template}
+
+{conventions}
 
 # 输出协议（必须遵守）
 
@@ -56,8 +58,9 @@ RECOMMEND_PROMPT = """下面是本地 skill 库中已有的 skill 列表，以�
 """
 
 
-def system_prompt(template: str) -> str:
-    return SYSTEM_TEMPLATE.format(template=template.strip())
+def system_prompt(template: str, conventions: str = "") -> str:
+    conv = f"# 本地标准补充\n\n{conventions.strip()}" if conventions.strip() else ""
+    return SYSTEM_TEMPLATE.format(template=template.strip(), conventions=conv)
 
 
 def sources_block(uploads: list[dict]) -> str:
@@ -103,17 +106,24 @@ def parse_recommendation(text: str, skill_names: list[str]) -> dict:
 
 
 def first_turn(mode: str, target: str | None, base_files: dict[str, str], uploads: list[dict], request: str,
-               name: str | None = None) -> str:
+               name: str | None = None, example: tuple[str, dict[str, str]] | None = None) -> str:
     if mode == "modify":
         task = (
             f"# 任务\n修改已有 skill「{target}」：把源文档中的子场景诊断步骤补充/合并进去。"
-            "保留原有正确内容，不要无故删除；合并后保证步骤编号连续、跳转目标真实存在、根因对照表覆盖全部根因；"
+            "保留原有正确内容，不要无故删除；模板结构之外的执行规则与说明段落原样保留；"
+            "合并后保证步骤编号连续、跳转目标真实存在、根因对照表覆盖全部根因；"
             "若合并后覆盖多个故障场景，按多场景布局重组。"
             f"\n\n# 已有 skill 文件\n\n{render_files(base_files)}"
         )
     else:
         naming = f"skill 的 name 使用「{name}」。" if name else "skill 的 name 按语义取英文 slug（不要拼音音译）。"
         task = f"# 任务\n根据源文档新建一个 skill，按故障场景数量选择单故障或多场景布局。{naming}"
+        if example:
+            task += (
+                f"\n\n# 参考样例：本地标准 skill「{example[0]}」（节选）\n\n"
+                "只参考它的格式、写法和与具体故障无关的通用执行规则，不要照抄它的故障内容、命令和根因。\n\n"
+                f"{render_files(example[1])}"
+            )
     return f"{task}\n\n# 源文档\n\n{sources_block(uploads)}\n\n# 用户要求\n\n{request.strip() or '请按模板规范生成。'}"
 
 

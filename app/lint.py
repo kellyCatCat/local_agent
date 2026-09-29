@@ -1,4 +1,7 @@
-"""按 skill_template 对整个 skill 目录做静态检查（单故障 / 多场景两种布局）。
+"""按 skill_template 和本地标准 skill 的实际写法，对整个 skill 目录做静态检查（单故障 / 多场景两种布局）。
+
+模板与本地标准 skill 冲突时以本地标准为准（见 templates/skill_conventions.md），例如：
+前置检查条目不要求「适用场景」、跳转目标可带参考文件路径、SKILL.md 末尾可有 `# references` 章节。
 
 结果展示在界面上，也可一键交给模型修正。检查是启发式的：error 基本可以确定违反规范，
 warning 需要人判断。
@@ -12,6 +15,7 @@ from .skills import MAIN_FILE, parse_frontmatter
 
 SINGLE_SECTIONS = ["入参列表", "前置检查", "排查步骤", "根因对照表"]
 MULTI_MAIN_SECTIONS = ["入参列表", "前置检查", "排查步骤"]
+REFS_SECTION = "references"  # 多场景 SKILL.md 末尾列出 reference/ 文件的章节
 REF_DIR = "reference"
 NOT_FOUND = "未找到根因"
 SLUG_RE = re.compile(r"^[a-z0-9-]+$")
@@ -26,6 +30,9 @@ HTML_TAGS = {"br", "br/", "b", "/b", "i", "/i", "p", "/p", "code", "/code", "sup
 STEP_FIELDS = [(k, rf"\*\*{v}\*\*") for k, v in
                (("步骤名称", "步骤名称"), ("CLI 命令", r"CLI\s*命令"), ("跳转信息", "跳转信息"), ("根因定位", "根因定位"))]
 SCENARIO_RE = re.compile(r"场景\s*[A-Za-z0-9]+\s*[：:].+")
+# 跳转目标：「场景A：名称」或「场景A：名称（reference/xxx.md）」
+TARGET_RE = re.compile(r"^(?P<name>.+?)\s*(?:[（(]\s*(?P<path>reference/[^）)\s]+)\s*[）)])?$")
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 
 class Linter:
@@ -78,6 +85,8 @@ class Linter:
             self.add("error", file, f"name「{name}」应与文件名「{expect_name}」一致")
         if not meta.get("description"):
             self.add("error", file, "文档头部缺少 description")
+        if "version" in meta and not VERSION_RE.match(meta["version"]):
+            self.add("warning", file, f"version「{meta['version']}」应为 x.y.z 格式")
 
     def check_order(self, file: str, order: list[str], expected: list[str]) -> None:
         for s in expected:
@@ -95,7 +104,7 @@ class Linter:
                 if len(row) > 1 and row[1].startswith("是"):
                     self.params_required.add(key)
 
-    def precheck_items(self, file: str, text: str, applies_label: str) -> list[int]:
+    def precheck_items(self, file: str, text: str) -> list[int]:
         """检查前置检查 / 本场景采集的有序列表，返回序号。"""
         nums = [int(n) for n in ITEM_RE.findall(text)]
         if not nums:
@@ -111,8 +120,6 @@ class Linter:
                 self.add("warning", file, f"前置检查/采集第 {n} 条缺少「CLI 命令」")
             if not re.search(r"采集内容", body):
                 self.add("warning", file, f"前置检查/采集第 {n} 条缺少「采集内容」")
-            if applies_label and applies_label not in body:
-                self.add("warning", file, f"前置检查第 {n} 条缺少「{applies_label}」")
         return nums
 
     def check_collect_params(self, file: str, title: str, text: str) -> None:
@@ -200,7 +207,7 @@ class Linter:
 
         pre_text = sections.get("前置检查", "")
         pre_list, jump = split_h2(pre_text, "步骤跳转表")
-        pre_nums = self.precheck_items(f, pre_list, "适用步骤")
+        pre_nums = self.precheck_items(f, pre_list)
         self.check_collect_params(f, "前置检查", pre_list)
 
         causes, max_step = self.check_steps(f, sections.get("排查步骤", "")) if "排查步骤" in sections else ({}, 0)
@@ -235,7 +242,7 @@ class Linter:
             elif "`" not in r[0]:
                 self.add("warning", file, f"跳转表「{r[0]}」应附上该步的命令")
             key = re.sub(r"\s+", "", r[1])
-            target = clean_target(r[2])
+            target = split_target(r[2])[0]
             if key in seen and seen[key] != target:
                 self.add("error", file, f"同一判据「{r[1]}」指向了两个目标")
             seen[key] = target
@@ -247,21 +254,23 @@ class Linter:
         self.check_order(f, order, MULTI_MAIN_SECTIONS)
         if "根因对照表" in sections:
             self.add("error", f, "多场景时根因对照表应写在各场景参考文件中，不放在 SKILL.md")
-        extra = [s for s in order if s not in SINGLE_SECTIONS]
+        if REFS_SECTION in order and order[-1] != REFS_SECTION:
+            self.add("warning", f, f"「# {REFS_SECTION}」应放在 SKILL.md 末尾")
+        extra = [s for s in order if s not in SINGLE_SECTIONS and s != REFS_SECTION]
         if extra:
             self.add("warning", f, f"存在模板外的一级标题：{', '.join(extra)}")
 
         pre_list, jump = split_h2(sections.get("前置检查", ""), "场景跳转表")
-        pre_nums = self.precheck_items(f, pre_list, "适用场景")
+        pre_nums = self.precheck_items(f, pre_list)
         self.check_collect_params(f, "前置检查", pre_list)
 
-        jump_targets: list[str] = []
+        jump_targets: list[tuple[str, str | None]] = []
         if jump is None:
             self.add("error", f, "多场景时前置检查之后必须有「## 场景跳转表」")
         else:
             rows = table_rows(jump)
             self.check_jump_rows(f, rows, pre_nums)
-            jump_targets = [clean_target(r[2]) for r in rows if len(r) >= 3]
+            jump_targets = [split_target(r[2]) for r in rows if len(r) >= 3]
 
         steps_sec = sections.get("排查步骤", "")
         if STEP_RE.search(steps_sec):
@@ -281,12 +290,24 @@ class Linter:
         if not ref_table:
             self.add("error", f, "「# 排查步骤」缺少「场景 | 参考文件 | 内容」参考文件表")
 
-        for t in jump_targets:
+        for t, tpath in jump_targets:
             if t and t not in ref_table:
                 self.add("error", f, f"场景跳转表的目标「{t}」不在参考文件表中（需逐字一致）")
+            elif tpath and tpath != ref_table[t]:
+                self.add("error", f, f"场景跳转表中「{t}」指向 {tpath}，与参考文件表中的 {ref_table[t]} 不一致")
+        jump_names = {t for t, _ in jump_targets}
         for scen in ref_table:
-            if jump_targets and scen not in jump_targets:
+            if jump_targets and scen not in jump_names:
                 self.add("error", f, f"场景「{scen}」没有出现在场景跳转表中")
+        if REFS_SECTION not in sections:
+            self.add("warning", f, f"SKILL.md 末尾缺少「# {REFS_SECTION}」章节（列出 reference/ 下的全部文件）")
+        else:
+            listed_names = set(re.findall(r"^\s*[-*]\s+`?([\w.-]+\.md)`?\s*$", sections[REFS_SECTION], re.M))
+            table_names = {PurePosixPath(p).name for p in ref_table.values()}
+            for n in sorted(table_names - listed_names):
+                self.add("warning", f, f"「# {REFS_SECTION}」中缺少 {n}")
+            for n in sorted(listed_names - table_names):
+                self.add("warning", f, f"「# {REFS_SECTION}」列出的 {n} 不在参考文件表中")
         listed = set(ref_table.values())
         for p in refs:
             if p not in listed:
@@ -310,7 +331,7 @@ class Linter:
         collect = body[: first_step.start()] if first_step else body
         pre_causes: list[str] = []
         if "本场景采集" in collect:
-            self.precheck_items(path, collect, "")
+            self.precheck_items(path, collect)
             self.check_collect_params(path, "本场景采集", collect)
             pre_causes = precheck_causes(collect)
         causes, _ = self.check_steps(path, body)
@@ -321,8 +342,66 @@ class Linter:
 
 # ---------------------------------------------------------------- 工具函数
 
-def lint_draft(files: dict[str, str]) -> list[dict]:
-    return Linter(files).run()
+def lint_draft(files: dict[str, str], base: dict[str, str] | None = None) -> list[dict]:
+    issues = Linter(files).run()
+    if base:
+        issues += check_preserved(files, base)
+    return issues
+
+
+MIN_PROSE_CHARS = 30
+
+
+def prose_paragraphs(text: str) -> list[str]:
+    """提取模板结构之外的说明性段落（执行规则、补充说明等），用于检查修改时是否被删改。
+
+    跳过标题、表格、编号条目（步骤/前置检查条目，属于正常修改范围）及其缩进子项。
+    """
+    paras, cur = [], []
+
+    def flush():
+        if cur:
+            p = norm_ws(" ".join(cur))
+            if len(p) >= MIN_PROSE_CHARS:
+                paras.append(p)
+            cur.clear()
+
+    in_fence = False
+    body = re.sub(rf"^# {REFS_SECTION}\s*$.*?(?=^# |\Z)", "", strip_frontmatter(text), flags=re.M | re.S)
+    for line in body.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            flush()
+            continue
+        if in_fence:
+            continue
+        st = line.strip()
+        if not st or st.startswith(("#", "|")) or re.match(r"^\d+\.\s", st) or line[:1] in (" ", "\t"):
+            flush()
+            continue
+        if re.match(r"^[-*]\s", st):  # 顶层列表项各自成段
+            flush()
+        cur.append(st)
+    flush()
+    return paras
+
+
+def norm_ws(s: str) -> str:
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def check_preserved(files: dict[str, str], base: dict[str, str]) -> list[dict]:
+    """原版中的说明性段落在草稿里找不到（被删除或改写）时给出提醒。"""
+    draft_all = norm_ws("\n".join(files.values()))
+    issues = []
+    for path, text in base.items():
+        if not path.endswith(".md"):
+            continue
+        for p in prose_paragraphs(text):
+            if p not in draft_all:
+                short = p if len(p) <= 60 else p[:60] + "…"
+                issues.append({"level": "warning", "file": path, "message": f"原有说明段落被删除或改写，请确认：「{short}」"})
+    return issues
 
 
 def dedupe(issues: list[dict]) -> list[dict]:
@@ -401,6 +480,12 @@ def table_rows(text: str) -> list[list[str]]:
             continue
         rows.append(cells)
     return rows[1:] if rows else []
+
+
+def split_target(s: str) -> tuple[str, str | None]:
+    """跳转目标 → (场景名, 参考文件路径或 None)。"""
+    m = TARGET_RE.match(clean_target(s))
+    return (m.group("name"), m.group("path")) if m else (clean_target(s), None)
 
 
 def clean_target(s: str) -> str:

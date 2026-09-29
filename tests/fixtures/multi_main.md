@@ -1,6 +1,7 @@
 ---
 name: isis-troubleshooting
 description: IS-IS 邻居异常。出现 IS-IS 邻居 Down/震荡告警时使用。
+version: 1.0.0
 ---
 
 # 入参列表
@@ -26,7 +27,7 @@ description: IS-IS 邻居异常。出现 IS-IS 邻居 Down/震荡告警时使用
 
 | 前置检查步骤 | 判据 | 跳转场景 |
 | --- | --- | --- |
-| 步骤 1（`display isis peer verbose`） | 邻居状态为 `Down` | → **场景A：IS-IS 邻居无法建立** |
+| 步骤 1（`display isis peer verbose`） | 邻居状态为 `Down` | → **场景A**：IS-IS 邻居无法建立（reference/neighbor-down.md） |
 | 步骤 2（`display alarm active verbose`） | 存在 `isisAdjacencyChange` 告警 | → **场景B：IS-IS 邻居震荡** |
 
 # 排查步骤
@@ -37,3 +38,9 @@ description: IS-IS 邻居异常。出现 IS-IS 邻居 Down/震荡告警时使用
 | --- | --- | --- |
 | 场景A：IS-IS 邻居无法建立 | reference/neighbor-down.md | 排查步骤 + 根因对照表 |
 | 场景B：IS-IS 邻居震荡 | reference/neighbor-flap.md | 排查步骤 + 根因对照表 |
+
+# references
+
+- skills/isis-troubleshooting/reference
+  - neighbor-down.md
+  - neighbor-flap.md

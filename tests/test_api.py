@@ -79,6 +79,7 @@ def test_full_flow(env):
     first_prompt = calls[-1][-1]["content"]
     assert "子场景：邻居震荡" in first_prompt and "已有 skill 文件" in first_prompt
     assert "产出 skill 的模板规范" in calls[-1][0]["content"]
+    assert "本地标准补充" in calls[-1][0]["content"]
 
     # 追问：只改一个文件并删除另一个
     ref = new_files["reference/neighbor-down.md"].replace("接口 Down", "接口物理 Down")
@@ -135,6 +136,8 @@ def test_create_flow_and_conflict(env):
     replies.append(blocks(multi_files()))
     sse(client.post(f"/api/sessions/{sid}/chat", json={"message": "生成"}))
     assert "isis-troubleshooting" in calls[-1][-1]["content"]
+    # 新建时附带库中已有 skill 作为格式样例
+    assert "参考样例：本地标准 skill「srv6-te-policy-down」" in calls[-1][-1]["content"]
     assert client.post(f"/api/sessions/{sid}/target", json={"mode": "create"}).status_code == 409
 
     r = client.post(f"/api/sessions/{sid}/writeback", json={})

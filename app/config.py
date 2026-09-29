@@ -33,6 +33,7 @@ class Settings:
     llm_max_tokens: int | None
     skills_dir: Path
     template_path: Path
+    conventions_path: Path
     data_dir: Path
     host: str
     port: int
@@ -57,6 +58,7 @@ def load_settings() -> Settings:
         llm_max_tokens=int(max_tokens) if max_tokens.isdigit() else None,
         skills_dir=_path("SKILLS_DIR", "./skills"),
         template_path=_path("TEMPLATE_PATH", "./templates/skill_template.md"),
+        conventions_path=_path("CONVENTIONS_PATH", "./templates/skill_conventions.md"),
         data_dir=_path("DATA_DIR", "./data"),
         host=os.getenv("HOST") or "127.0.0.1",
         port=int(os.getenv("PORT") or 8000),

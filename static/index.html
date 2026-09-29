@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skill 维护 Agent</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232f6fde'/%3E%3Cpath d='M4 5h8M4 8h8M4 11h5' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Skill 维护 Agent</div>
+  <div class="meta" id="meta"></div>
+</header>
+
+<div class="layout">
+  <!-- 左栏：会话 + skill 库 -->
+  <aside class="sidebar">
+    <button class="btn primary block" id="newSession">＋ 新会话</button>
+    <div class="side-title">会话</div>
+    <ul class="list" id="sessionList"></ul>
+    <div class="side-title">
+      <span>Skill 库 <span class="muted" id="skillCount"></span></span>
+      <button class="link" id="refreshSkills" title="刷新">刷新</button>
+    </div>
+    <ul class="list" id="skillList"></ul>
+    <a class="btn block" id="downloadLibrary" href="/api/library/download">下载整个 skill 库</a>
+  </aside>
+
+  <!-- 中栏：流程 + 对话 -->
+  <main class="center">
+    <div id="empty" class="empty">
+      <p>新建一个会话，上传补充子场景诊断步骤的 Excel / Markdown 文档开始。</p>
+      <button class="btn primary" id="newSession2">＋ 新会话</button>
+    </div>
+
+    <div id="workspace" hidden>
+      <section class="card" id="stepUpload">
+        <div class="card-head"><span class="num">1</span>上传源文档 <span class="muted">.xlsx / .md / .csv / .txt，可多选</span></div>
+        <label class="drop" id="drop">
+          <input type="file" id="fileInput" multiple accept=".xlsx,.xlsm,.md,.markdown,.txt,.csv">
+          <span>拖拽文件到这里，或点击选择</span>
+        </label>
+        <div class="chips" id="uploadChips"></div>
+      </section>
+
+      <section class="card" id="stepTarget">
+        <div class="card-head"><span class="num">2</span>选择修改方式</div>
+        <div id="targetBody"></div>
+      </section>
+
+      <section class="chat" id="chat"></section>
+
+      <form class="composer" id="composer">
+        <textarea id="input" rows="3" placeholder=""></textarea>
+        <div class="composer-actions">
+          <span class="muted small" id="composerHint">Enter 发送，Shift+Enter 换行</span>
+          <button class="btn" type="button" id="stopBtn" hidden>停止</button>
+          <button class="btn primary" type="submit" id="sendBtn">发送</button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <!-- 右栏：草稿 -->
+  <section class="panel" id="panel" hidden>
+    <div class="panel-head">
+      <div>
+        <div class="panel-title" id="draftTitle">草稿</div>
+        <div class="muted small" id="draftSub"></div>
+      </div>
+      <select id="versionSelect" title="历史版本"></select>
+    </div>
+    <div class="tabs" id="fileTabs"></div>
+    <div class="tabs sub">
+      <button class="tab" data-view="edit">源码 / 编辑</button>
+      <button class="tab" data-view="diff-base">与原版对比</button>
+      <button class="tab" data-view="diff-prev">与上一版对比</button>
+    </div>
+    <div class="viewer">
+      <textarea id="editor" spellcheck="false"></textarea>
+      <div id="diffView" class="diff" hidden></div>
+    </div>
+    <div class="lint" id="lint"></div>
+    <div class="panel-actions">
+      <button class="btn" id="saveEdit" hidden>保存手动修改</button>
+      <a class="btn" id="downloadDraft">下载最新 skill</a>
+      <button class="btn primary" id="writeback">写回 skill 库</button>
+    </div>
+  </section>
+</div>
+
+<dialog id="dialog">
+  <form method="dialog">
+    <div class="dialog-head"><span id="dialogTitle"></span><button class="link" value="close">关闭</button></div>
+    <pre id="dialogBody"></pre>
+    <div class="dialog-actions" id="dialogActions"></div>
+  </form>
+</dialog>
+<div class="toast" id="toast" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

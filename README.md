@@ -18,6 +18,8 @@ cp .env.example .env      # 填写 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL / SKIL
 python -m app             # 打开 http://127.0.0.1:8000
 ```
 
+**局域网访问**：`.env` 中设置 `HOST=0.0.0.0`，重启后启动日志会打印 `http://<本机局域网IP>:<端口>`，其他机器用这个地址访问。需要在防火墙放行该端口。页面没有登录验证，只在可信网络中开放。
+
 `.env` 已在 `.gitignore` 中，模型地址和密钥不会进入代码仓。模型接口需兼容 OpenAI `POST {LLM_BASE_URL}/chat/completions`（流式）。
 
 ## 使用流程

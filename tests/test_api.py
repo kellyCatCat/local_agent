@@ -196,3 +196,19 @@ def test_writeback_bumps_version(env):
     # 没有新改动再次写回：不递增
     r = client.post(f"/api/sessions/{sid}/writeback", json={}).json()
     assert r["bumps"] == [] and "version: 1.0.1" in (d / "SKILL.md").read_text("utf-8")
+
+
+def test_cli_source_check_in_view(env):
+    from tests.test_provenance import step_table
+    client, skills_dir, calls, replies = env
+    sid = client.post("/api/sessions").json()["id"]
+    xlsx = step_table([("A", "", "display interface <接口名>", "", "", "")])
+    r = client.post(f"/api/sessions/{sid}/uploads", files=[("files", ("步骤表.xlsx", xlsx, "application/octet-stream"))])
+    assert r.json()["session"]["uploads"][0]["cli_source"] is True
+    client.post(f"/api/sessions/{sid}/target", json={"mode": "create", "name": "isis-troubleshooting"})
+    replies.append(blocks(multi_files()))
+    draft = sse(client.post(f"/api/sessions/{sid}/chat", json={"message": ""}))[-1]["session"]["draft"]
+    cli = [i["message"] for i in draft["lint"] if i["message"].startswith("CLI ")]
+    assert "CLI `display isis peer verbose` 在源步骤表的命令来源列中找不到出处" in cli
+    assert not any("display interface" in m for m in cli)
+    assert "步骤表.xlsx" in draft["cli_note"]

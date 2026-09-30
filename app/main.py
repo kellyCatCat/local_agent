@@ -17,7 +17,8 @@ from . import llm, prompts
 from .config import ROOT, settings
 from .fileblocks import UnsafePathError, parse_output, safe_relpath, strip_blocks
 from .lint import lint_changes
-from .parser import ParseError, parse_upload
+from .parser import ParseError, parse_cli_source, parse_upload
+from .provenance import check_cli_sources
 from .sessions import SessionStore, add_draft, current_draft
 from .versioning import apply_bumps, plan_bumps
 from .skills import MAIN_FILE, SkillStore, parse_frontmatter, valid_name, zip_files
@@ -103,16 +104,19 @@ def _view(s: dict) -> dict:
     """返回给前端的会话视图。"""
     files = current_draft(s)
     lint_new, lint_existing = lint_changes(files, s["base_files"]) if files else ([], [])
+    cli_issues, cli_note = check_cli_sources(files, s["uploads"], s["base_files"]) if files else ([], "")
     return {
         **{k: s.get(k) for k in ("id", "title", "created_at", "updated_at", "recommendation", "mode", "target", "name", "writebacks")},
-        "uploads": [{k: u[k] for k in ("id", "name", "size", "sent")} | {"chars": len(u["text"])} for u in s["uploads"]],
+        "uploads": [{k: u[k] for k in ("id", "name", "size", "sent")} | {"chars": len(u["text"]), "cli_source": bool(u.get("cli"))}
+                    for u in s["uploads"]],
         "messages": [{k: m.get(k) for k in ("role", "content", "ts", "version", "error")} for m in s["messages"]],
         "versions": [{k: d[k] for k in ("version", "ts", "source", "note")} for d in s["drafts"]],
         "draft": {
             "version": s["drafts"][-1]["version"] if s["drafts"] else None,
             "files": files,
             "name": _draft_name(s, files),
-            "lint": lint_new,                 # 本次修改引入的问题（新建 skill 时为全部问题）
+            "lint": lint_new + cli_issues,    # 本次修改引入的问题（新建 skill 时为全部问题），含 CLI 来源检查
+            "cli_note": cli_note,             # CLI 来源检查的依据 / 未检查原因
             "lint_existing": lint_existing,   # 原版中已存在、不在本次修改范围的问题
             "changed": _changed_files(s["base_files"], files),
             "version_bumps": plan_bumps(files, _library_files(s, files)) if files else [],
@@ -214,10 +218,11 @@ async def upload(sid: str, files: list[UploadFile] = File(...)):
                 continue
             try:
                 text = parse_upload(f.filename or "", data)
+                cli = parse_cli_source(f.filename or "", data)
             except ParseError as e:
                 errors.append(f"{f.filename}：{e}")
                 continue
-            s["uploads"].append({"id": uuid.uuid4().hex[:8], "name": f.filename, "size": len(data), "text": text, "sent": False})
+            s["uploads"].append({"id": uuid.uuid4().hex[:8], "name": f.filename, "size": len(data), "text": text, "cli": cli, "sent": False})
         if s["title"] == "新会话" and s["uploads"]:
             s["title"] = s["uploads"][0]["name"]
         sessions.save(s)

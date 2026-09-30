@@ -165,7 +165,8 @@ function render() {
 function renderUploads() {
   const s = state.session;
   $("#uploadChips").replaceChildren(...s.uploads.map((u) =>
-    el("span", { class: "chip" + (u.sent ? "" : " new"), title: u.sent ? "已发送给模型" : "尚未发送给模型（下一轮会带上）" },
+    el("span", { class: "chip" + (u.sent ? "" : " new"),
+      title: (u.sent ? "已发送给模型" : "尚未发送给模型（下一轮会带上）") + (u.cli_source ? "；已识别命令来源列，用于 CLI 来源检查" : "；非 Excel 步骤表，不做 CLI 来源检查") },
       el("span", { class: "n", onclick: () => previewUpload(u) }, `📄 ${u.name}`),
       el("span", { class: "muted" }, `${u.chars} 字`),
       el("button", { title: "移除", onclick: () => removeUpload(u.id) }, "✕"))));
@@ -514,6 +515,7 @@ function renderLint(issues, existing, show) {
         el("button", { class: "link", disabled: !!state.streaming, onclick: fixByModel }, "让模型按检查结果修正")),
       el("ul", {}, ...issues.map((i) => el("li", { class: i.level }, `[${i.file}] ${i.message}`))));
   }
+  if (s.draft.cli_note) nodes.push(el("div", { class: "muted small" }, s.draft.cli_note));
   if (existing.length) {
     nodes.push(el("div", { class: "muted small existing-toggle" },
       `另有 ${existing.length} 个原版中已存在的问题，不在本次修改范围 `,

@@ -123,8 +123,12 @@ class Linter:
         return nums
 
     def check_collect_params(self, file: str, title: str, text: str) -> None:
-        """前置检查/本场景采集只能用入参列表里的必填参数。"""
-        for code in INLINE_CODE_RE.findall(text):
+        """前置检查/本场景采集下发的命令只能用入参列表里的必填参数。
+
+        只看「CLI 命令」行：采集内容等说明文字里提到参数（如"后续 `<process-id>` 取自此处"）不算使用。
+        """
+        cli_lines = "\n".join(l for l in text.splitlines() if re.search(r"CLI\s*命令", l))
+        for code in INLINE_CODE_RE.findall(cli_lines):
             for p in params_in(code):
                 key = norm_param(p)
                 if self.params_required and find_param(key, self.params_all) and not find_param(key, self.params_required):

@@ -192,3 +192,10 @@ def test_lint_changes_without_base_reports_all():
     files = {"SKILL.md": fixture("isis/SKILL.md")}
     new, existing = lint_changes(files, {})
     assert existing == [] and new == lint_draft(files)
+
+
+def test_param_mentioned_in_collect_content_is_not_usage():
+    """采集内容里说明参数来源，不算前置检查使用了非必填参数。"""
+    text = fixture("single_skill.md").replace(
+        "   - 采集内容：`Policy State`", "   - 采集内容：后续 `<segment-list-id>` 取自此处；`Policy State`", 1)
+    assert not any("非必填参数" in m for m in msgs(lint_draft({"SKILL.md": text})))
